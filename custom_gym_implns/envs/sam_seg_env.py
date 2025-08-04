@@ -17,7 +17,7 @@ class SamSegEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"], "render_fps": 1}
 
     def __init__(self, img_shape, embedding_shape, mask_shape, render_frame_shape,
-                 max_steps, target_categories, dataset_config, sam_ckpt_fp, 
+                 max_steps, target_categories, data_config, sam_ckpt_fp, 
                  img_patch_size=None, num_patches=None, render_mode='rgb_array'):
         
         assert len(img_shape) == 3, "Image shape should be (H, W, C)"
@@ -41,8 +41,8 @@ class SamSegEnv(gym.Env):
         self.max_steps = max_steps  # The maximum number of steps the agent can take
 
         self.target_categories = target_categories  # The categories to segment
-        self.dataset_config = dataset_config
-        self.dataset = get_dataset(self.dataset_config)
+        self.data_config = data_config
+        self.dataset = get_dataset(self.data_config)
 
         self.img_patch_size = img_patch_size
 
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     render_mode = 'human'
 
     target_categories = ['person', 'cat', 'dog', 'car', 'bicycle', 'bus']
-    dataset_config = {
+    data_config = {
         'type': 'coco',
         'data_dir': os.path.join(os.getcwd(), 'data', 'coco-dataset'),
         'data_type': 'val2017',
@@ -317,7 +317,7 @@ if __name__ == "__main__":
                     render_frame_shape=render_frame_shape,
                     max_steps=max_steps,
                     target_categories=target_categories,
-                    dataset_config=dataset_config,
+                    data_config=data_config,
                     sam_ckpt_fp=sam_ckpt_fp,
                     img_patch_size=img_patch_size,
                     render_mode=render_mode)
