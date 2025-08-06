@@ -33,6 +33,7 @@ class CocoDataset:
         img_fp = '{}/images/{}/{}'.format(self.data_dir, self.data_type, img_filename)
 
         if not os.path.exists(img_fp):
+            print(f"Image file not found: {img_fp}, data_dir: {self.data_dir}, data_type: {self.data_type}, img_filename: {img_filename}, img_id: {img_id}")
             raise FileNotFoundError()
         
         return cv2.imread(img_fp, -1)
