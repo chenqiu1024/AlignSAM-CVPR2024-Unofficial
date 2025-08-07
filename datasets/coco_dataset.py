@@ -44,7 +44,10 @@ class CocoDataset:
         while True:
             sample_img_id = self.random.choice(img_ids)
             sample_img = self.load_image(sample_img_id)
-            h,w,_ = sample_img.shape
+            shape = sample_img.shape
+            if len(shape) != 3:
+                print(f"Wrong shape: {shape}, sample_img_id: {sample_img_id}, img_ids: {img_ids}")
+            h,w,_ = shape ###!!!HERE
 
             ann_ids = self.coco.getAnnIds(imgIds=sample_img_id, 
                                         catIds=target_cat_ids, iscrowd=None)
