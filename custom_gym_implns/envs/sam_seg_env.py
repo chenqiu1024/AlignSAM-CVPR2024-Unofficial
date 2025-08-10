@@ -19,6 +19,14 @@ class SamSegEnv(gym.Env):
     def __init__(self, img_shape, embedding_shape, mask_shape, render_frame_shape,
                  max_steps, target_categories, data_config, sam_ckpt_fp, 
                  img_patch_size=None, num_patches=None, render_mode='rgb_array'):
+        # Environment design:
+        # - The agent interacts with SAM by placing point prompts (positive/negative) on an image.
+        # - This mirrors the promptable segmentation interface of SAM (Kirillov et al., 2023),
+        #   docs/Segment Anything.pdf.
+        # - Reward encourages improved segmentation quality (Dice proxy) and correct click semantics,
+        #   following AlignSAM's RL formulation.
+        # - The environment provides state as SAM encoder features and current mask probability,
+        #   which the agent uses to decide the next prompt.
         
         assert len(img_shape) == 3, "Image shape should be (H, W, C)"
         assert len(embedding_shape) == 3, "Embedding shape should be (C, H, W)"
@@ -43,6 +51,7 @@ class SamSegEnv(gym.Env):
         self.target_categories = target_categories  # The categories to segment
         self.data_config = data_config
         self.dataset = get_dataset(self.data_config)
+        # Dataset supplies images and category masks (e.g., COCO). See datasets/coco_dataset.py.
 
         self.img_patch_size = img_patch_size
 
@@ -58,6 +67,8 @@ class SamSegEnv(gym.Env):
         self.render_mode = render_mode
 
         self.sam_predictor = RepVITSamWrapper(sam_ckpt_fp)
+        # RepViT-SAM variant speeds up image encoder with RepViT backbone (Ding et al., 2023-2024).
+        # See docs/RepViT-SAM- Towards Real-Time Segmenting Anything.pdf
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2, i.e. MultiDiscrete([size, size]).
@@ -68,6 +79,9 @@ class SamSegEnv(gym.Env):
                 "sam_pred_mask_prob": spaces.Box(0, 1, shape=(*mask_shape,), dtype=np.float32),
             }
         )
+        # Observation fields align with the agent's feature extractors:
+        # - "sam_image_embeddings": encoder features per SAM; used to condition actions
+        # - "sam_pred_mask_prob": current belief map to guide next clicks
 
         img_h, img_w = img_shape[:2]
         if img_patch_size is not None:
@@ -105,6 +119,8 @@ class SamSegEnv(gym.Env):
         # The last action is to mark the task as done
         # self._action_to_input[num_patches + 1] = ('done', -1)
         self.action_space = spaces.Discrete(len(self._action_to_input))
+        # Action space enumerates (patch-center, label) pairs; label∈{positive=1, negative=0}.
+        # This discrete grid approximates SAM point prompts (Segment Anything).
 
         self._load_sample_from_dataset()
 
@@ -118,6 +134,8 @@ class SamSegEnv(gym.Env):
         self._image = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), self.img_shape[:2][::-1])
         self.sam_predictor.set_image(self._image)
         self._sam_image_embeddings = self.sam_predictor.get_image_embeddings()
+        # SAM predictor provides image encoder features. In original SAM, these are ViT features; here
+        # RepViT-SAM replaces ViT with RepViT for efficient inference (RepViT-SAM paper).
         self._sam_pred_mask_prob = np.zeros(self.mask_shape, dtype=np.float32)
         self._sam_pred_mask = np.zeros(self.img_shape[:2], dtype=np.float32)
 
@@ -141,6 +159,8 @@ class SamSegEnv(gym.Env):
     
 
     def run_sam(self):
+        # Convert accumulated clicks to masks via SAM predictor. This follows the promptable inference
+        # pipeline of SAM (Kirillov et al., 2023), selecting the mask with highest IoU score.
         masks, ious, low_res_mask_logits = self.sam_predictor.predict(
             np.array(self._last_actions["input_points"]), 
             np.array(self._last_actions["input_labels"])
@@ -166,6 +186,10 @@ class SamSegEnv(gym.Env):
 
     def compute_reward(self, pred_mask, act):
         # Compute dice score
+        # Reward shaping:
+        # - Dice improvement and correctness of click semantics.
+        # - Encourages progressive refinement as in AlignSAM: higher reward when the mask improves
+        #   and when the click matches ground-truth foreground/background.
         resized_gt_mask = cv2.resize(self._gt_mask,
                                      pred_mask.shape[::-1],
                                      interpolation=cv2.INTER_NEAREST)
@@ -264,6 +288,8 @@ class SamSegEnv(gym.Env):
     
 
     def render(self):
+        # Visualization: left=RGB image, middle=GT mask, right=SAM prediction + clicks (green=positive, red=negative)
+        # This aids qualitative assessment as in SAM figures (docs/Segment Anything.pdf) and AlignSAM demos.
         img = cv2.resize(cv2.cvtColor(self._image, cv2.COLOR_RGB2BGR), self.render_frame_shape[::-1])
 
         gt_mask = cv2.resize((self._gt_mask * 255).astype(np.uint8), self.render_frame_shape[::-1])

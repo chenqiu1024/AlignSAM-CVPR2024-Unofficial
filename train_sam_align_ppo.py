@@ -1,8 +1,33 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppopy
+#
+# AlignSAM context:
+# - This training script implements on-policy reinforcement learning (PPO) to learn a policy that
+#   interactively prompts SAM (Segment Anything Model) for target-aware segmentation.
+# - The environment provides SAM image embeddings and current mask probability; the agent outputs
+#   a discrete action corresponding to a click location and label (positive/negative), aligning
+#   with the promptable segmentation interface described in Segment Anything (Kirillov et al., 2023).
+# - The overall idea follows AlignSAM: Aligning Segment Anything Model to Open Context via
+#   Reinforcement Learning (CVPR 2024 workshop) where PPO is used to train an agent to adapt SAM
+#   using interaction signals and reward shaped by segmentation quality.
+#   See: docs/AlignSAM- Aligning Segment Anything Model to Open Context via Reinforcement Learning.pdf
+#   See: docs/Segment Anything.pdf
+# - PPO details follow the standard formulation from Schulman et al., 2017.
+#   See: clipped objective, advantage estimation, and value loss below.
 import os
 import random
 import time
 from dataclasses import dataclass
+
+# Training entrypoint for AlignSAM with PPO (on-policy RL).
+#
+# High-level overview and references (see `docs/`):
+# - AlignSAM: Aligning Segment Anything Model to Open Context via Reinforcement Learning.
+#   This script implements the RL loop where the agent learns to place point prompts
+#   to guide SAM toward a target category mask.
+# - Segment Anything: Provides the promptable segmentation interface (points) used by the env.
+# - A Closer Look at CLIP Explainability: Supplies token-level similarity maps used by the
+#   explicit agent to ground clicks in text semantics (via CLIP-Surgery utilities).
+# - PPO: Uses clipped surrogate objective, GAE(λ), and value loss per standard practice.
 
 import gymnasium as gym
 import numpy as np
@@ -85,6 +110,12 @@ class Args:
     """the maximum norm for the gradient clipping"""
     target_kl: float = None
     """the target KL divergence threshold"""
+# Notes on PPO hyperparameters:
+# - clip_coef: surrogate objective clipping parameter per PPO (Schulman et al., 2017)
+# - gae_lambda: Generalized Advantage Estimation lambda (Schulman et al., 2016)
+# - ent_coef: encourages exploration via policy entropy
+# - vf_coef: weight for value loss in the combined objective
+# - target_kl: early stopping when empirical KL exceeds threshold
 
     # to be filled in runtime
     batch_size: int = 0
@@ -100,6 +131,9 @@ def make_env(env_id, idx, capture_video, capture_ep_freq, log_dir, env_cfg):
         return episode_idx % capture_ep_freq == 0
     
     def thunk():
+        # The environment is a SAM-based interactive segmentation task. The agent's action is a
+        # click (location + positive/negative label). This encapsulates the prompt design from
+        # Segment Anything (Kirillov et al., 2023), see docs/Segment Anything.pdf.
         if capture_video and idx == 0:
             env = gym.make(env_id, **env_cfg)
             video_folder = os.path.join(log_dir, "videos")
@@ -117,6 +151,10 @@ def make_env(env_id, idx, capture_video, capture_ep_freq, log_dir, env_cfg):
 def load_obs_to_tensor(obs, device):
     obs_tensor = dict()
     for key in obs.keys():
+        # Observation dictionary contains:
+        # - "image": raw RGB (H, W, C)
+        # - "sam_image_embeddings": SAM image encoder features (C, H', W')
+        # - "sam_pred_mask_prob": current mask probability map (Hmask, Wmask)
         obs_tensor[key] = torch.Tensor(obs[key]).to(device)
     return obs_tensor
 
@@ -196,6 +234,8 @@ if __name__ == "__main__":
              for i in range(args.num_envs)],
         )
         assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+        # The discrete action space indexes a pre-defined grid of clicks with positive/negative label.
+        # See `SamSegEnv` for the mapping logic.
 
         agent = make_agent(agent_cfg, envs).to(device)
         optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
@@ -207,6 +247,8 @@ if __name__ == "__main__":
             optimizer.load_state_dict(checkpoint["optimizer"])
 
         # ALGO Logic: Storage setup
+        # PPO collects trajectories over num_steps and num_envs, then optimizes policy and value nets
+        # using minibatch SGD on the clipped objective.
         obs = dict()
         # obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
         for key, space in envs.single_observation_space.spaces.items():
@@ -227,6 +269,7 @@ if __name__ == "__main__":
 
         for iteration in range(1, args.num_iterations + 1):
             # Annealing the rate if instructed to do so.
+            # Linear LR annealing per CleanRL PPO recipe.
             if args.anneal_lr:
                 frac = 1.0 - ((iteration - 1.0) / args.num_iterations)
                 lrnow = frac * args.learning_rate
@@ -239,6 +282,10 @@ if __name__ == "__main__":
 
                 # ALGO LOGIC: action logic
                 with torch.no_grad():
+                    # Actor-critic forward: outputs action distribution and state value.
+                    # The agent merges SAM features with CLIP-surgery features (explicit agent) or
+                    # uses only SAM features (implicit agent). See models/explicit_agent.py and
+                    # models/implicit_agent.py for details and citations.
                     action, logprob, _, value = agent.get_action_and_value(next_obs)
                     values[step] = value.flatten()
                 actions[step] = action
@@ -263,6 +310,10 @@ if __name__ == "__main__":
                 next_value = agent.get_value(next_obs).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
                 lastgaelam = 0
+                # Generalized Advantage Estimation (GAE; Schulman et al., 2016):
+                # advantages[t] = δ_t + γλ δ_{t+1} + (γλ)^2 δ_{t+2} + ...
+                # where δ_t = r_t + γ V(s_{t+1}) - V(s_t)
+                # Using γ=0.99 and λ=0.95 per common PPO settings stabilizes training.
                 for t in reversed(range(args.num_steps)):
                     if t == args.num_steps - 1:
                         nextnonterminal = 1.0 - next_done
@@ -270,6 +321,7 @@ if __name__ == "__main__":
                     else:
                         nextnonterminal = 1.0 - dones[t + 1]
                         nextvalues = values[t + 1]
+                    # GAE(λ) temporal-difference residual (Schulman et al., 2016)
                     delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
                     advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
                 returns = advantages + values
@@ -309,14 +361,15 @@ if __name__ == "__main__":
                     if args.norm_adv:
                         mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
-                    # Policy loss
+                    # Policy loss (PPO clipped surrogate objective; Schulman et al., 2017)
                     pg_loss1 = -mb_advantages * ratio
                     pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                    # Value loss
+                    # Value loss (optionally clipped)
                     newvalue = newvalue.view(-1)
                     if args.clip_vloss:
+                        # Clipped value objective mirrors the policy clip to reduce value overfitting.
                         v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
                         v_clipped = b_values[mb_inds] + torch.clamp(
                             newvalue - b_values[mb_inds],
@@ -361,6 +414,10 @@ if __name__ == "__main__":
             print("SPS:", int(global_step / (time.time() - start_time)))
             print("Iteration:", iteration)
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            # In AlignSAM terms, higher episodic returns imply improved alignment of interactive
+            # prompts to produce target-specific masks. See docs/AlignSAM- Aligning Segment Anything Model to Open Context via Reinforcement Learning.pdf
+            # The RL loop aligns the agent's click strategy with segmentation quality, while SAM
+            # executes the promptable segmentation per docs/Segment Anything.pdf.
 
             if iteration % args.checkpoint_iter_freq == 0:
                 checkpoint = {

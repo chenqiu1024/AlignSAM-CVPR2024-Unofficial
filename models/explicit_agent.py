@@ -18,6 +18,20 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class ExplicitAgent(nn.Module):
     def __init__(self, envs, agent_cfg):
         super().__init__()
+        # Explicit agent fuses two streams:
+        # 1) SAM image encoder features and current mask belief (prompt-conditioned vision features)
+        # 2) CLIP-surgery similarity maps to target text prompts (language grounding)
+        # Fusion is followed by a lightweight attention block and an actor-critic head for PPO.
+        #
+        # References:
+        # - Segment Anything: promptable segmentation via point prompts (Kirillov et al., 2023)
+        #   docs/Segment Anything.pdf
+        # - AlignSAM: aligning SAM to open context via RL; PPO agent optimizes interactive prompts
+        #   to maximize segmentation reward
+        #   docs/AlignSAM- Aligning Segment Anything Model to Open Context via Reinforcement Learning.pdf
+        # - CLIP Surgery: removes dataset bias and provides class activation-like similarity maps
+        #   for better localization
+        #   CLIP_Surgery repo (see CLIP_Surgery/README.md in this project subtree)
 
         self.setup_clip(
             agent_cfg['clip_model_name'], 
@@ -37,6 +51,8 @@ class ExplicitAgent(nn.Module):
             nn.ReLU(),
             nn.Flatten(), # (b, 1024)
         )
+        # The SAM stream conditions on current mask probability (see get_sam_features) to focus the
+        # encoder features on regions consistent with past prompts, akin to iterative refinement.
 
         self.clip_network = nn.Sequential(
             layer_init(nn.Conv2d(len(self.clip_text_prompt), 16, 3, stride=2, padding=1, padding_mode='zeros')), # (b, num_prompts, 64, 64)
@@ -50,6 +66,8 @@ class ExplicitAgent(nn.Module):
             nn.ReLU(),
             nn.Flatten(), # (b, 1024)
         )
+        # The CLIP-surgery stream converts text-image similarity to spatial maps (class-activation-like)
+        # to inject target category semantics; see get_clip_surgery_features.
 
         self.combined_attention = ResidualAttentionBlock(
             d_model=2048,
@@ -57,6 +75,7 @@ class ExplicitAgent(nn.Module):
             attn_mask=None,
             need_weights=False
         ) 
+        # A shallow attention block enables cross-stream interaction prior to policy/value heads.
 
         self.head = nn.Sequential(
             layer_init(nn.Linear(2048, 512)),
@@ -105,7 +124,8 @@ class ExplicitAgent(nn.Module):
             image_features = self.clip_model.encode_image(image)
             image_features = image_features / image_features.norm(dim=1, keepdim=True)
 
-            # Apply feature surgery
+            # Apply feature surgery (see CLIP Surgery method): remove redundant components to obtain
+            # sharper text-conditioned localization maps for the target categories.
             similarity = clip.clip_feature_surgery(image_features, 
                                                 self.clip_text_features, 
                                                 self.clip_redundant_features)
@@ -141,6 +161,8 @@ class ExplicitAgent(nn.Module):
         combined_hidden = torch.cat([hidden_x, hidden_clip], dim=1)
         out = self.combined_attention(combined_hidden)
         return out
+        # The merged representation is used by the actor-critic head to decide the next prompt.
+        # This implements the AlignSAM idea of leveraging both vision and language cues during RL.
 
 
     def get_value(self, obs):

@@ -12,6 +12,16 @@ from repvit_sam.utils.transforms import ResizeLongestSide
 class RepVITSamWrapper:
     def __init__(self, ckpt_filepath, model_type="repvit", 
                  device=None, multimaskoutput=False):
+        # Wrapper around RepViT-SAM implementation to expose:
+        # - set_image: cache image features (encoder forward)
+        # - get_image_embeddings: return encoder feature map for RL agent
+        # - predict: run mask prediction given point prompts
+        #
+        # RepViT-SAM replaces SAM's ViT encoder with RepViT for efficiency while maintaining mask
+        # quality (see docs/RepViT-SAM- Towards Real-Time Segmenting Anything.pdf). The interface
+        # follows the original SAM predictor API (docs/Segment Anything.pdf).
+        # Also see RepViT paper for the convolutional re-parameterization and efficiency aspects
+        # (docs/RepViT- Revisiting Mobile CNN From ViT Perspective.pdf).
         if not os.path.exists(ckpt_filepath):
             raise Exception("SAM checkpoint path not valid")
         

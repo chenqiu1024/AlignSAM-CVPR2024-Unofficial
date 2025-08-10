@@ -13,6 +13,10 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class ImplicitAgent(nn.Module):
     def __init__(self, envs, agent_cfg):
         super().__init__()
+        # Implicit agent only uses SAM image embeddings modulated by the current mask probability.
+        # No CLIP components are used; this isolates the benefit of RL-driven prompting over pure
+        # vision features. The network maps features to an actor-critic policy for PPO.
+        # See AlignSAM paper in docs for discussion of explicit vs implicit conditioning.
         self.network = nn.Sequential(
             layer_init(nn.Conv2d(256, 64, 8, stride=2)),
             nn.ReLU(),
@@ -42,6 +46,8 @@ class ImplicitAgent(nn.Module):
         x = sam_image_embeddings * resized_sam_mask_prob 
         x += sam_image_embeddings # skip connection
         return x
+        # The modulation by current mask probability guides the encoder features toward regions
+        # consistent with prior prompts, enabling iterative refinement akin to SAM's interactive use.
 
     def get_value(self, obs):
         x = self.parse_obs(obs)

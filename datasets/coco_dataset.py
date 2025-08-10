@@ -14,6 +14,9 @@ class CocoDataset:
         ann_fp = '{}/annotations/instances_{}.json'.format(data_dir, data_type)
         self.coco = COCO(annotation_file=ann_fp)
         self.random = np.random.RandomState(seed=seed)
+        # COCO is a standard dataset for instance segmentation. Following AlignSAM, target categories
+        # are sampled and the largest instance annotation is used to define the target mask for the
+        # interactive episode. This encourages meaningful, non-trivial targets.
 
     def configure_targets(self, target_categories):
         try:
@@ -47,7 +50,7 @@ class CocoDataset:
             if len(sample_img.shape) == 2:
                 print(f"Wrong shape: {sample_img.shape}, sample_img_id: {sample_img_id}, img_ids: {img_ids}")
                 sample_img = sample_img.reshape(sample_img.shape[0], sample_img.shape[1], 1)
-            h,w,_ = sample_img.shape ###!!!HERE
+            h,w,_ = sample_img.shape
 
             ann_ids = self.coco.getAnnIds(imgIds=sample_img_id, 
                                         catIds=target_cat_ids, iscrowd=None)
@@ -56,10 +59,9 @@ class CocoDataset:
             anns = sorted(anns, key=lambda x: x['area'], reverse=True)
             sample_mask = self.coco.annToMask(anns[0])
 
-            # Ensure the largest annotation is significant enough
-            # to be considered a valid sample
-            # This is a heuristic to avoid very small annotations
-            # that might not be useful for training or evaluation
+            # Ensure the largest annotation is significant enough to be considered a valid sample.
+            # Heuristic mirrors AlignSAM-style curation: avoid tiny instances that provide little
+            # informative signal for interactive segmentation.
             if anns[0]['area'] > 0.01 * h * w:
                 break
 
