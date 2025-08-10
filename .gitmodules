@@ -1,6 +1,6 @@
 [submodule "RepViT"]
 	path = RepViT
-	url = https://github.com/THU-MIG/RepViT.git
+	url = https://github.com/chenqiu1024/RepViT.git
 [submodule "CLIP_Surgery"]
 	path = CLIP_Surgery
-	url = https://github.com/xmed-lab/CLIP_Surgery.git
+	url = https://github.com/chenqiu1024/CLIP_Surgery.git
