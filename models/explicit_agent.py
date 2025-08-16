@@ -137,15 +137,15 @@ class ExplicitAgent(nn.Module):
             return similarity_map
 
 
-    def get_sam_features(self, obs):
+    def get_sam_features(self, obs): ###!!!HERE
         sam_image_embeddings = obs["sam_image_embeddings"] # (b, c, h, w)
         sam_pred_mask_prob = obs["sam_pred_mask_prob"].unsqueeze(dim=1)  # (b, 1, h, w)
 
-        embedding_shape = tuple(sam_image_embeddings.size())
+        embedding_shape = tuple(sam_image_embeddings.size()) # (b, c, h, w)
         resized_sam_mask_prob = nn.functional.interpolate(
             sam_pred_mask_prob, size=(embedding_shape[2], embedding_shape[3]), 
             mode="bilinear", align_corners=False)
-        resized_sam_mask_prob = resized_sam_mask_prob.repeat(1, embedding_shape[1], 1, 1)
+        resized_sam_mask_prob = resized_sam_mask_prob.repeat(1, embedding_shape[1], 1, 1) # Duplicate in Channel to align with 
 
         x = sam_image_embeddings * resized_sam_mask_prob 
         x += sam_image_embeddings # skip connection

@@ -157,19 +157,19 @@ def load_obs_to_tensor(obs, device):
         # - "sam_pred_mask_prob": current mask probability map (Hmask, Wmask)
         obs_tensor[key] = torch.Tensor(obs[key]).to(device)
     return obs_tensor
-
+## Update one steop of observations with next_obs:
 def update_obs_at_step(obs, next_obs, step):
     for key in obs.keys():
         obs[key][step] = next_obs[key]
 
 def flatten_obs(obs):
     new_obs = dict()
-    for key, val in obs.items():
+    for key, val in obs.items(): ## val's shape is (#steps, #envs, sizeof(env))
         val_shape = list(val.size())
         num_steps, num_envs = val_shape[:2] 
         new_obs[key] = val.reshape(num_steps * num_envs, *val_shape[2:])
     return new_obs
-
+## Pick out all observations of a single step:
 def get_obs_at_inds(obs, mb_inds):
     new_obs = dict()
     for key, val in obs.items():
@@ -293,8 +293,8 @@ if __name__ == "__main__":
 
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_raw_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-                next_done = np.logical_or(terminations, truncations)
-                rewards[step] = torch.tensor(reward).to(device).view(-1)
+                next_done = np.logical_or(terminations, truncations) ## Combines terminal and time-limit endings into a single done mask.
+                rewards[step] = torch.tensor(reward).to(device).view(-1) ## view(-1) flatten to a 1D tensor with inferred size, matching the per-step rewards shape.
                 next_obs = load_obs_to_tensor(next_raw_obs, device)
                 next_done = torch.Tensor(next_done).to(device)
 

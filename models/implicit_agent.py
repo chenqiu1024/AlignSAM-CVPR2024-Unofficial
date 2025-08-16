@@ -33,7 +33,7 @@ class ImplicitAgent(nn.Module):
         self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
 
-    def parse_obs(self, obs):
+    def parse_obs(self, obs): ## Same as get_sam_features in explicit_agent.py
         sam_image_embeddings = obs["sam_image_embeddings"] # (b, c, h, w)
         sam_pred_mask_prob = obs["sam_pred_mask_prob"].unsqueeze(dim=1)  # (b, 1, h, w)
 

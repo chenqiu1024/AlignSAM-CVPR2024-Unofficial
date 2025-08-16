@@ -44,7 +44,7 @@ class RepVITSamWrapper:
     def set_image(self, image):
         self.sam_predictor.set_image(image)
 
-    def get_image_embeddings(self):
+    def get_image_embeddings(self): ###!!! Get image embeddings
         embeddings = self.sam_predictor.features.squeeze().cpu().numpy().astype(np.float32)
         return embeddings
 
