@@ -13,6 +13,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class ImplicitAgent(nn.Module):
     def __init__(self, envs, agent_cfg):
         super().__init__()
+        self.debug_mode = agent_cfg.get('debug_mode', False)
         # Implicit agent only uses SAM image embeddings modulated by the current mask probability.
         # No CLIP components are used; this isolates the benefit of RL-driven prompting over pure
         # vision features. The network maps features to an actor-critic policy for PPO.
