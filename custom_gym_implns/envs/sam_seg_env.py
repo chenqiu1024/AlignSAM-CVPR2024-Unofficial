@@ -183,7 +183,7 @@ class SamSegEnv(gym.Env):
             np.array(self._last_actions["input_points"]), 
             np.array(self._last_actions["input_labels"])
         )
-
+        ## SAM can output raw logits. Using logits + sigmoid gives you a smooth probability map suitable for thresholding, resizing, or reward computation.
         best_mask_idx = np.argmax(ious)
         best_pred_mask_prob = 1 / (1 + np.exp(-low_res_mask_logits[best_mask_idx]))
         self._sam_pred_mask_prob = best_pred_mask_prob
@@ -220,7 +220,7 @@ class SamSegEnv(gym.Env):
         mask_patch = self._categorical_instance_masks[patch_around_point_yrange[0]:patch_around_point_yrange[1],
                                                         patch_around_point_xrange[0]:patch_around_point_xrange[1]]
         mask_patch = np.any(mask_patch > 0, axis=-1)  # Combine all instance masks into a single binary mask    
-
+        ## collapses the K instance channels into one 2D mask (h_patch, w_patch) where a pixel is True if it belongs to any instance
         # If the patch is empty, return the original action
         if not np.any(mask_patch > 0):
             return input_point
@@ -229,8 +229,8 @@ class SamSegEnv(gym.Env):
         foreground_indices = np.argwhere(mask_patch)
         foreground_indices_center_x = np.mean(foreground_indices[:, 1]) + patch_around_point_xrange[0]
         foreground_indices_center_y = np.mean(foreground_indices[:, 0]) + patch_around_point_yrange[0]
-        input_point = (int(foreground_indices_center_x), int(foreground_indices_center_y)) 
-        
+        ## 随后对第1列取均值得到前景的 x 坐标中心，对第0列取均值得到 y 坐标中心；再加上补丁在整图中的起始偏移，恢复为全图坐标。
+        input_point = (int(foreground_indices_center_x), int(foreground_indices_center_y))  
         return input_point
 
 
@@ -276,12 +276,12 @@ class SamSegEnv(gym.Env):
                 dist_coeff = 1 - np.exp(-np.min(input_dist) / (2 * self.img_patch_size))
             else:
                 dist_coeff = 1.0
-
+            ## : Purpose: encourage spatially diverse, non-redundant clicks of the same label by scaling the click-correctness reward
             point_image_indices = tuple(map(int, (input_point[1], input_point[0])))
             # print(point_image_indices, input_label)
 
             # Check across instance masks to see if its background or foreground
-            gt_label = np.max(self._categorical_instance_masks[point_image_indices] > 0)
+            gt_label = np.max(self._categorical_instance_masks[point_image_indices] > 0) ## Same as without > 0
 
             if gt_label == 1:
                 # Reward for correct input for positive class
