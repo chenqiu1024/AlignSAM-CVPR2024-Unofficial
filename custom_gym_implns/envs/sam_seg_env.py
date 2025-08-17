@@ -52,8 +52,8 @@ class SamSegEnv(gym.Env):
         self.use_dice_score = use_dice_score
 
         self.target_categories = target_categories  # The categories to segment
-        self.data_config = data_config
-        self.dataset = get_dataset(self.data_config)
+        self.dataset_config = dataset_config
+        self.dataset = get_dataset(self.dataset_config)
         # Dataset supplies images and category masks (e.g., COCO). See datasets/coco_dataset.py.
 
         self.img_patch_size = img_patch_size
@@ -450,7 +450,7 @@ if __name__ == "__main__":
     render_mode = 'human'
 
     target_categories = ['person', 'cat', 'dog', 'car', 'bicycle', 'bus']
-    data_config = {
+    dataset_config = {
         'type': 'coco',
         'data_dir': os.path.join(os.getcwd(), 'data', 'coco-dataset'),
         'data_type': 'val2017',
@@ -466,7 +466,7 @@ if __name__ == "__main__":
                     render_frame_shape=render_frame_shape,
                     max_steps=max_steps,
                     target_categories=target_categories,
-                    data_config=data_config,
+                    dataset_config=dataset_config,
                     penalize_for_wrong_input=penalize_for_wrong_input,
                     use_dice_score=use_dice_score,
                     sam_ckpt_fp=sam_ckpt_fp,
