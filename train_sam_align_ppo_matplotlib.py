@@ -395,6 +395,7 @@ if __name__ == "__main__":
     # Metrics buffers
     metrics_rows: List[Dict[str, float]] = []
     eval_points: List[Tuple[int, float, float]] = []  # (iteration, mean_dice, mean_iou)
+    eval_rows: List[Dict[str, float]] = []
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -543,6 +544,7 @@ if __name__ == "__main__":
         if (iteration % max(1, args.eval_interval)) == 0:
             mean_dice, mean_iou = evaluate_agent(agent, env_cfg, device, num_episodes=args.eval_episodes)
             eval_points.append((iteration, mean_dice, mean_iou))
+            eval_rows.append({"iteration": iteration, "mean_dice": float(mean_dice), "mean_iou": float(mean_iou)})
             print(f"[Eval] Iter {iteration}: mean Dice={mean_dice:.4f}, mean IoU={mean_iou:.4f}")
 
         # Plotting and CSV export
@@ -551,6 +553,7 @@ if __name__ == "__main__":
             plot_eval_curves(os.path.join(figures_dir, "eval_curves.png"), eval_points)
             if args.save_metrics_csv:
                 save_metrics_csv(os.path.join(log_dir, "metrics.csv"), metrics_rows)
+                save_metrics_csv(os.path.join(log_dir, "eval_metrics.csv"), eval_rows)
 
         if iteration % args.checkpoint_iter_freq == 0:
             checkpoint = {
@@ -573,6 +576,7 @@ if __name__ == "__main__":
     plot_eval_curves(os.path.join(figures_dir, "eval_curves.png"), eval_points)
     if args.save_metrics_csv:
         save_metrics_csv(os.path.join(log_dir, "metrics.csv"), metrics_rows)
+        save_metrics_csv(os.path.join(log_dir, "eval_metrics.csv"), eval_rows)
 
     print(f"Saved figures to: {figures_dir}")
     print(f"Saved metrics CSV to: {os.path.join(log_dir, 'metrics.csv')}")
