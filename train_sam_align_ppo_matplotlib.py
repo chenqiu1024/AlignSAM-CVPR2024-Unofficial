@@ -271,6 +271,10 @@ def to_tensor_batch_for_agent(obs: Dict[str, np.ndarray], device: torch.device) 
             elif key == "image":
                 t = t.unsqueeze(0)
             batched[key] = t.to(device)
+    # Include non-array textual fields expected by the agent (e.g., target_category)
+    if "target_category" in obs:
+        # Agent iterates over this field, so provide a batch (length-1) list/array
+        batched["target_category"] = [obs["target_category"]]
     return batched
 
 
